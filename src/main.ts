@@ -4,6 +4,7 @@ import type { DroidSettings, Session } from './core/types';
 import { VIEW_TYPE_DROIDIAN, DEFAULT_SETTINGS } from './core/constants';
 import { DroidianView } from './features/chat/DroidianView';
 import { DroidianSettingsTab } from './features/settings/SettingsTab';
+import { registerEditorCommands } from './features/commands/EditorCommands';
 
 patchElectronCompat();
 
@@ -50,6 +51,7 @@ export default class DroidianPlugin extends Plugin {
 		});
 
 		this.addSettingTab(new DroidianSettingsTab(this.app, this));
+		registerEditorCommands(this);
 
 		if (Platform.isDesktop && this.settings.serverEnabled) {
 			this.startRelayServer().catch(err => console.error('[Droidian] relay server start error:', err));

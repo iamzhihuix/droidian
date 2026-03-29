@@ -278,6 +278,12 @@ export class InputArea {
 	focus(): void {
 		this.textareaEl.focus();
 	}
+
+	setPrefilledText(text: string): void {
+		this.textareaEl.value = text;
+		this.autoResize();
+		this.updateSendState();
+	}
 }
 
 // ── Icons ─────────────────────────────────────────────────────────────────────

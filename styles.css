@@ -845,3 +845,89 @@ code .droidian-file-link {
 	white-space: pre-wrap;
 	word-break: break-word;
 }
+
+/* ========================================
+   Export Button
+   ======================================== */
+.droidian-tab-export-btn {
+	margin-left: auto;
+	flex-shrink: 0;
+	width: 26px;
+	height: 26px;
+	border-radius: var(--radius-s);
+	border: none;
+	background: transparent;
+	color: var(--text-muted);
+	cursor: pointer;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 0;
+}
+
+.droidian-tab-export-btn:hover {
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+.droidian-tab-export-btn svg {
+	width: 14px;
+	height: 14px;
+}
+
+/* ========================================
+   Diff Viewer
+   ======================================== */
+.droidian-diff-modal .modal-content {
+	max-width: 780px;
+	width: 90vw;
+}
+
+.droidian-diff-container {
+	font-family: var(--font-monospace);
+	font-size: var(--font-smaller);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	overflow: auto;
+	max-height: 55vh;
+	background: var(--background-primary);
+	margin: 12px 0;
+}
+
+.droidian-diff-line {
+	display: flex;
+	gap: 8px;
+	padding: 1px 10px;
+	white-space: pre;
+}
+
+.droidian-diff-line.is-add {
+	background: color-mix(in srgb, var(--color-green) 12%, transparent);
+	color: var(--color-green);
+}
+
+.droidian-diff-line.is-del {
+	background: color-mix(in srgb, var(--color-red) 12%, transparent);
+	color: var(--color-red);
+}
+
+.droidian-diff-line.is-ctx {
+	color: var(--text-muted);
+}
+
+.droidian-diff-sign {
+	flex-shrink: 0;
+	user-select: none;
+	opacity: 0.7;
+}
+
+.droidian-diff-text {
+	overflow: hidden;
+}
+
+.droidian-diff-actions {
+	display: flex;
+	gap: 8px;
+	justify-content: flex-end;
+	padding-top: 4px;
+}

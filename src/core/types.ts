@@ -11,6 +11,11 @@ export interface DroidSettings {
 	serverEnabled: boolean;
 	serverPort: number;
 	serverToken: string;
+	// Diff preview
+	showDiffPreview: boolean;
+	// Chat export
+	exportEnabled: boolean;
+	exportFolder: string;
 }
 
 export type AutoLevel = 'readonly' | 'low' | 'medium' | 'high';

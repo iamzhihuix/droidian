@@ -27,9 +27,22 @@ export type DroidEventCallback = (event: DroidEvent) => void;
 export type DroidErrorCallback = (error: Error) => void;
 export type DroidCloseCallback = (code: number | null) => void;
 
+export interface FileEditPermission {
+	reqId: string;
+	toolName: string;
+	filePath: string;
+	newContent: string;
+	oldContent: string;
+	options: PermissionOption[];
+	respond: (selectedOption: string) => void;
+}
+export type DroidPermissionCallback = (perm: FileEditPermission) => void;
+
 export interface SendMessageOptions {
 	text: string;
 	noteContext?: string;
+	noteContent?: string;
+	selectedText?: string;
 	images?: { media_type: string; data: string }[];
 }
 
@@ -47,6 +60,7 @@ export class DroidService {
 	private onEvent: DroidEventCallback;
 	private onError: DroidErrorCallback;
 	private onClose: DroidCloseCallback;
+	onPermission: DroidPermissionCallback | null = null;
 
 	constructor(
 		settings: DroidSettings,
@@ -88,7 +102,14 @@ export class DroidService {
 		await this.ensureProcess(vaultPath);
 
 		const parts: string[] = [];
-		if (opts.noteContext) {
+		if (opts.selectedText) {
+			// Selected text takes priority — inject as focused context
+			parts.push(`Selected text from "${opts.noteContext ?? 'note'}":\n\`\`\`\n${opts.selectedText}\n\`\`\`\n\n`);
+		} else if (opts.noteContent) {
+			// Full note content
+			const header = opts.noteContext ? `Current note: ${opts.noteContext}\n` : '';
+			parts.push(`${header}\`\`\`\n${opts.noteContent.slice(0, 8000)}\n\`\`\`\n\n`);
+		} else if (opts.noteContext) {
 			parts.push(`Current note: ${opts.noteContext}\n\n`);
 		}
 		parts.push(opts.text);
@@ -236,10 +257,32 @@ export class DroidService {
 					options: PermissionOption[];
 				};
 				const toolNames = params.toolUses.map(t => t.toolUse.name).join(', ');
-				// Use the first available option (works for both regular tools and exit_spec_mode)
-				const selectedOption = params.options[0]?.value ?? 'allow_once';
-				log.info(`request_permission tools=[${toolNames}] options=${params.options.map(o => o.value).join('|')} → ${selectedOption}`);
-				this.droidProcess.sendJsonRpcResponse(req.id, { selectedOption });
+				const FILE_WRITE_TOOLS = new Set(['edit', 'write', 'create', 'multiedit']);
+				const isFileWrite = params.toolUses.some(t => FILE_WRITE_TOOLS.has(t.toolUse.name.toLowerCase()));
+
+				if (isFileWrite && this.settings.showDiffPreview && this.onPermission) {
+					const toolUse = params.toolUses[0];
+					const toolInput = toolUse.toolUse as Record<string, unknown>;
+					const filePath = String(toolInput['file_path'] ?? toolInput['path'] ?? '');
+					const newContent = String(toolInput['new_str'] ?? toolInput['content'] ?? toolInput['new_content'] ?? '');
+					const oldContent = String(toolInput['old_str'] ?? '');
+					log.info(`request_permission → diff preview for ${filePath}`);
+					this.onPermission({
+						reqId: req.id,
+						toolName: toolUse.toolUse.name,
+						filePath,
+						newContent,
+						oldContent,
+						options: params.options,
+						respond: (selectedOption) => {
+							this.droidProcess.sendJsonRpcResponse(req.id, { selectedOption });
+						},
+					});
+				} else {
+					const selectedOption = params.options[0]?.value ?? 'allow_once';
+					log.info(`request_permission tools=[${toolNames}] options=${params.options.map(o => o.value).join('|')} → ${selectedOption}`);
+					this.droidProcess.sendJsonRpcResponse(req.id, { selectedOption });
+				}
 				break;
 			}
 

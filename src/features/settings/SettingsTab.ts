@@ -223,6 +223,54 @@ export class DroidianSettingsTab extends PluginSettingTab {
 				);
 		}
 
+		// ── Diff preview (desktop) ────────────────────────────────────────────
+		if (Platform.isDesktop) {
+			containerEl.createEl('h3', { text: 'File Edit Preview' });
+
+			new Setting(containerEl)
+				.setName('Show diff before applying edits')
+				.setDesc('When Droid edits a file, show a diff preview with Accept / Reject buttons before writing.')
+				.addToggle(toggle =>
+					toggle
+						.setValue(this.plugin.settings.showDiffPreview)
+						.onChange(async (value) => {
+							this.plugin.settings.showDiffPreview = value;
+							await this.plugin.saveSettings();
+						})
+				);
+		}
+
+		// ── Chat export ───────────────────────────────────────────────────────
+		containerEl.createEl('h3', { text: 'Chat Export' });
+
+		new Setting(containerEl)
+			.setName('Export conversations to Markdown')
+			.setDesc('Automatically save chat sessions as .md files in your vault after each reply.')
+			.addToggle(toggle =>
+				toggle
+					.setValue(this.plugin.settings.exportEnabled)
+					.onChange(async (value) => {
+						this.plugin.settings.exportEnabled = value;
+						await this.plugin.saveSettings();
+						this.display();
+					})
+			);
+
+		if (this.plugin.settings.exportEnabled) {
+			new Setting(containerEl)
+				.setName('Export folder')
+				.setDesc('Vault-relative path where exported chat Markdown files are saved.')
+				.addText(text =>
+					text
+						.setPlaceholder('Droid/sessions')
+						.setValue(this.plugin.settings.exportFolder)
+						.onChange(async (value) => {
+							this.plugin.settings.exportFolder = value.trim() || 'Droid/sessions';
+							await this.plugin.saveSettings();
+						})
+				);
+		}
+
 		// ── Desktop: Auth status ───────────────────────────────────────────────
 		if (Platform.isDesktop) {
 			containerEl.createEl('h3', { text: 'Authentication' });

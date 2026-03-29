@@ -16,6 +16,9 @@ export const DEFAULT_SETTINGS: DroidSettings = {
 	serverEnabled: false,
 	serverPort: 8766,
 	serverToken: '',
+	showDiffPreview: true,
+	exportEnabled: false,
+	exportFolder: 'Droid/sessions',
 };
 
 export const AVAILABLE_MODELS = [

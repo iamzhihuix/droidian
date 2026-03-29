@@ -1,6 +1,9 @@
-import { ItemView, WorkspaceLeaf, Notice } from 'obsidian';
+import { ItemView, Modal, WorkspaceLeaf, Notice } from 'obsidian';
 import type DroidianPlugin from '../../main';
 import type { Session, ChatMessage, DroidEvent, Attachment } from '../../core/types';
+import type { FileEditPermission } from '../../core/DroidService';
+import { renderDiff } from './DiffViewer';
+import { exportSessionToMarkdown } from '../../utils/sessionExporter';
 import { VIEW_TYPE_DROIDIAN } from '../../core/constants';
 import { DroidService } from '../../core/DroidService';
 import { ChatRenderer } from './ChatRenderer';
@@ -51,6 +54,9 @@ export class DroidianView extends ItemView {
 			(code) => this.handleProcessClose(code)
 		);
 
+		// Wire up diff preview permission handler
+		this.service.onPermission = (perm) => this.handleFileEditPermission(perm);
+
 		// Load persisted sessions
 		this.sessions = this.plugin.getSessions();
 		if (this.sessions.length === 0) {
@@ -82,6 +88,16 @@ export class DroidianView extends ItemView {
 		this.tabManager.setSessions(this.sessions);
 		if (this.activeSession) {
 			this.tabManager.setActive(this.activeSession.id);
+		}
+
+		// Export button in tab bar
+		if (this.plugin.settings.exportEnabled) {
+			const exportBtn = tabBarEl.createEl('button', {
+				cls: 'droidian-tab-export-btn',
+				attr: { 'aria-label': 'Export chat to Markdown' },
+			});
+			exportBtn.innerHTML = exportIcon();
+			exportBtn.addEventListener('click', () => this.exportActiveSession());
 		}
 
 		// Chat area
@@ -182,6 +198,10 @@ export class DroidianView extends ItemView {
 					}
 					await this.plugin.saveSessions(this.sessions);
 					this.setStreaming(false);
+					// Auto-export to Markdown if enabled
+					if (this.plugin.settings.exportEnabled && this.activeSession) {
+						exportSessionToMarkdown(this.app, this.activeSession, this.plugin.settings.exportFolder).catch(() => {});
+					}
 				},
 				onError: (err) => {
 					new Notice(`Droid error: ${err}`);
@@ -205,13 +225,20 @@ export class DroidianView extends ItemView {
 		);
 
 		try {
-			const noteContext = this.getActiveNotePath();
+			const activeFile = this.app.workspace.getActiveFile();
+			const noteContext = activeFile?.path ?? '';
+			const noteContent = activeFile
+				? await this.app.vault.cachedRead(activeFile).catch(() => '')
+				: '';
+			const selectedText = this.getSelectedText();
 			const images = imageAttachments
 				.filter(a => a.mimeType && a.base64)
 				.map(a => ({ media_type: a.mimeType!, data: a.base64! }));
 			await this.service.sendMessage(vaultPath, {
 				text: enrichedText,
 				noteContext,
+				noteContent: noteContent || undefined,
+				selectedText: selectedText || undefined,
 				images: images.length > 0 ? images : undefined,
 			});
 		} catch (err) {
@@ -280,6 +307,14 @@ export class DroidianView extends ItemView {
 		this.newTab();
 	}
 
+	/** Called by editor commands — sends a pre-built prompt as a user message. */
+	sendFromCommand(text: string): void {
+		if (!text.trim()) return;
+		this.inputArea.setPrefilledText(text);
+		// Auto-send
+		this.sendMessage(text);
+	}
+
 	private newTab(): void {
 		if (this.isStreaming) {
 			this.cancelStreaming();
@@ -325,8 +360,106 @@ export class DroidianView extends ItemView {
 		return (this.app.vault.adapter as any).basePath ?? null;
 	}
 
+	private async exportActiveSession(): Promise<void> {
+		if (!this.activeSession || this.activeSession.messages.length === 0) {
+			new Notice('No messages to export.');
+			return;
+		}
+		try {
+			const path = await exportSessionToMarkdown(
+				this.app, this.activeSession, this.plugin.settings.exportFolder
+			);
+			new Notice(`Exported to ${path}`);
+			// Open the exported file
+			const file = this.app.vault.getFileByPath(path);
+			if (file) this.app.workspace.openLinkText(path, '', 'tab');
+		} catch (err) {
+			new Notice(`Export failed: ${(err as Error).message}`);
+		}
+	}
+
+	private async handleFileEditPermission(perm: FileEditPermission): Promise<void> {
+		// Read current file content for diff if not provided
+		let oldContent = perm.oldContent;
+		if (!oldContent && perm.filePath) {
+			const file = this.app.vault.getFileByPath(perm.filePath);
+			if (file) {
+				oldContent = await this.app.vault.read(file).catch(() => '');
+			}
+		}
+
+		const modal = new DiffModal(this.app, perm, oldContent);
+		modal.open();
+	}
+
 	private getActiveNotePath(): string {
 		const file = this.app.workspace.getActiveFile();
 		return file?.path ?? '';
 	}
+
+	private getSelectedText(): string {
+		const editor = this.app.workspace.activeEditor?.editor;
+		if (!editor) return '';
+		const sel = editor.getSelection();
+		return sel ?? '';
+	}
+}
+
+// ── Diff Modal ────────────────────────────────────────────────────────────────
+
+import type { App as ObsidianApp } from 'obsidian';
+
+class DiffModal extends Modal {
+	private perm: FileEditPermission;
+	private oldContent: string;
+
+	constructor(app: ObsidianApp, perm: FileEditPermission, oldContent: string) {
+		super(app);
+		this.perm = perm;
+		this.oldContent = oldContent;
+	}
+
+	onOpen(): void {
+		const { contentEl } = this;
+		contentEl.addClass('droidian-diff-modal');
+
+		contentEl.createEl('h3', { text: `${this.perm.toolName}: ${this.perm.filePath}` });
+
+		const diffEl = contentEl.createDiv('droidian-diff-container');
+		// For Edit tool: show old_str → new_str diff
+		// For Create/Write: show empty → new content
+		renderDiff(diffEl, this.oldContent, this.perm.newContent || this.perm.newContent);
+
+		const btnRow = contentEl.createDiv('droidian-diff-actions');
+
+		const acceptBtn = btnRow.createEl('button', { cls: 'mod-cta', text: 'Accept' });
+		acceptBtn.addEventListener('click', () => {
+			this.perm.respond('allow_once');
+			this.close();
+		});
+
+		const rejectBtn = btnRow.createEl('button', { text: 'Reject' });
+		rejectBtn.addEventListener('click', () => {
+			this.perm.respond('deny');
+			this.close();
+		});
+
+		const alwaysBtn = btnRow.createEl('button', { text: 'Always allow' });
+		alwaysBtn.addEventListener('click', () => {
+			const alwaysOpt = this.perm.options.find(o => o.value === 'allow_always');
+			this.perm.respond(alwaysOpt?.value ?? 'allow_once');
+			this.close();
+		});
+	}
+
+	onClose(): void {
+		this.contentEl.empty();
+	}
+}
+
+function exportIcon(): string {
+	return `<svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+		<path d="M2 10v4h12v-4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+		<path d="M8 2v8M5 7l3 3 3-3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+	</svg>`;
 }
