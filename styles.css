@@ -931,3 +931,74 @@ code .droidian-file-link {
 	justify-content: flex-end;
 	padding-top: 4px;
 }
+
+/* ========================================
+   @ Mention Popup
+   ======================================== */
+.droidian-mention-popup {
+	position: absolute;
+	bottom: calc(100% + 4px);
+	left: 0;
+	right: 0;
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	box-shadow: var(--shadow-l);
+	overflow-y: auto;
+	max-height: 320px;
+	z-index: 100;
+	padding: 4px;
+}
+
+.droidian-mention-item {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 6px 8px;
+	border-radius: var(--radius-s);
+	cursor: pointer;
+	min-height: 36px;
+}
+
+.droidian-mention-item:hover,
+.droidian-mention-item.is-active {
+	background: var(--background-modifier-hover);
+}
+
+.droidian-mention-icon {
+	flex-shrink: 0;
+	width: 16px;
+	height: 16px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--text-muted);
+}
+
+.droidian-mention-icon svg {
+	width: 14px;
+	height: 14px;
+}
+
+.droidian-mention-text {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	overflow: hidden;
+}
+
+.droidian-mention-name {
+	font-size: var(--font-ui-small);
+	color: var(--text-normal);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.droidian-mention-dir {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}

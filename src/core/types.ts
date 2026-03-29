@@ -23,12 +23,12 @@ export type AutoLevel = 'readonly' | 'low' | 'medium' | 'high';
 export type MessageRole = 'user' | 'assistant';
 
 export interface Attachment {
-	type: 'image' | 'file';
+	type: 'image' | 'file' | 'folder';
 	name: string;
 	// image attachments
 	mimeType?: string;
 	base64?: string;
-	// file attachments
+	// file / folder attachments
 	vaultPath?: string;
 }
 

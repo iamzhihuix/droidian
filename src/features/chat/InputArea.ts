@@ -6,7 +6,7 @@ export interface InputAreaCallbacks {
 	onCancel: () => void;
 }
 
-/** Modal for picking a vault file to attach */
+/** Modal for picking a vault file to attach via paperclip button */
 class FilePicker extends FuzzySuggestModal<TFile> {
 	private onChoose: (file: TFile) => void;
 
@@ -29,6 +29,67 @@ class FilePicker extends FuzzySuggestModal<TFile> {
 	}
 }
 
+// ── @ Mention popup ───────────────────────────────────────────────────────────
+
+interface MentionCandidate {
+	kind: 'file' | 'folder';
+	path: string;
+	name: string;
+	score: number;
+}
+
+/** Simple fuzzy scorer: higher = better match. */
+function fuzzyScore(query: string, path: string): number {
+	const q = query.toLowerCase();
+	const p = path.toLowerCase();
+	const name = p.split('/').pop() ?? p;
+
+	if (name === q) return 100;
+	if (name.startsWith(q)) return 80;
+	if (name.includes(q)) return 60;
+	if (p.includes(q)) return 40;
+
+	// Character sequence match
+	let qi = 0;
+	for (let i = 0; i < p.length && qi < q.length; i++) {
+		if (p[i] === q[qi]) qi++;
+	}
+	return qi === q.length ? 20 : 0;
+}
+
+function getMentionCandidates(app: App, query: string): MentionCandidate[] {
+	const results: MentionCandidate[] = [];
+	const q = query.toLowerCase();
+
+	// Files
+	for (const file of app.vault.getFiles()) {
+		const score = fuzzyScore(q, file.path);
+		if (score > 0 || q === '') {
+			results.push({ kind: 'file', path: file.path, name: file.name, score: q === '' ? 50 : score });
+		}
+	}
+
+	// Folders
+	const seen = new Set<string>();
+	for (const file of app.vault.getFiles()) {
+		const parts = file.path.split('/');
+		for (let i = 1; i < parts.length; i++) {
+			const folderPath = parts.slice(0, i).join('/');
+			if (seen.has(folderPath)) continue;
+			seen.add(folderPath);
+			const folderName = parts[i - 1];
+			const score = fuzzyScore(q, folderPath);
+			if (score > 0 || q === '') {
+				results.push({ kind: 'folder', path: folderPath, name: folderName, score: q === '' ? 45 : score });
+			}
+		}
+	}
+
+	return results.sort((a, b) => b.score - a.score).slice(0, 8);
+}
+
+// ── InputArea ─────────────────────────────────────────────────────────────────
+
 export class InputArea {
 	private containerEl: HTMLElement;
 	private wrapEl: HTMLElement;
@@ -40,6 +101,13 @@ export class InputArea {
 	private app: App;
 	private isStreaming = false;
 	private attachments: Attachment[] = [];
+
+	// @ mention popup state
+	private mentionPopup: HTMLElement | null = null;
+	private mentionQuery = '';
+	private mentionStart = -1;
+	private mentionActiveIdx = 0;
+	private mentionCandidates: MentionCandidate[] = [];
 
 	constructor(containerEl: HTMLElement, app: App, callbacks: InputAreaCallbacks) {
 		this.containerEl = containerEl;
@@ -73,19 +141,31 @@ export class InputArea {
 
 		this.textareaEl = rowEl.createEl('textarea', {
 			cls: 'droidian-input-textarea',
-			attr: { placeholder: 'How can I help you today?', rows: '1' },
+			attr: { placeholder: 'How can I help you today?  ( @ to attach a file or folder )', rows: '1' },
 		});
 
 		this.textareaEl.addEventListener('input', () => {
 			this.autoResize();
 			this.updateSendState();
+			this.handleMentionInput();
 		});
 
 		this.textareaEl.addEventListener('keydown', (e: KeyboardEvent) => {
+			if (this.mentionPopup) {
+				if (e.key === 'ArrowDown') { e.preventDefault(); this.moveMention(1); return; }
+				if (e.key === 'ArrowUp')   { e.preventDefault(); this.moveMention(-1); return; }
+				if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); this.selectMention(); return; }
+				if (e.key === 'Escape')    { e.preventDefault(); this.closeMention(); return; }
+			}
 			if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
 				e.preventDefault();
 				this.handleSend();
 			}
+		});
+
+		this.textareaEl.addEventListener('blur', () => {
+			// Delay so click on popup item fires first
+			setTimeout(() => this.closeMention(), 150);
 		});
 
 		this.textareaEl.addEventListener('paste', (e: ClipboardEvent) => {
@@ -107,7 +187,7 @@ export class InputArea {
 			this.handleDrop(e);
 		});
 
-		// Stop button (shown during streaming)
+		// Stop button
 		this.cancelBtn = rowEl.createEl('button', {
 			cls: 'droidian-input-action-btn droidian-input-stop-btn',
 			attr: { 'aria-label': 'Stop' },
@@ -126,12 +206,125 @@ export class InputArea {
 		this.updateSendState();
 	}
 
+	// ── @ Mention logic ───────────────────────────────────────────────────────
+
+	private handleMentionInput(): void {
+		const val = this.textareaEl.value;
+		const cursor = this.textareaEl.selectionStart ?? val.length;
+		const textBefore = val.slice(0, cursor);
+
+		// Find the last '@' that isn't preceded by a word char (to avoid email addresses)
+		const atMatch = textBefore.match(/(?:^|[\s\n])@([^\s@]*)$/);
+		if (atMatch) {
+			const query = atMatch[1];
+			// Position of the '@' in the full string
+			const atPos = cursor - query.length - 1;
+			this.mentionStart = atPos;
+			this.mentionQuery = query;
+			this.mentionCandidates = getMentionCandidates(this.app, query);
+			this.mentionActiveIdx = 0;
+			this.renderMentionPopup();
+		} else {
+			this.closeMention();
+		}
+	}
+
+	private renderMentionPopup(): void {
+		this.closeMentionPopupEl();
+		if (this.mentionCandidates.length === 0) return;
+
+		const popup = document.createElement('div');
+		popup.className = 'droidian-mention-popup';
+
+		for (let i = 0; i < this.mentionCandidates.length; i++) {
+			const c = this.mentionCandidates[i];
+			const item = popup.createDiv('droidian-mention-item');
+			if (i === this.mentionActiveIdx) item.addClass('is-active');
+
+			item.createSpan('droidian-mention-icon').innerHTML = c.kind === 'folder' ? folderIcon() : fileIcon();
+			const textEl = item.createDiv('droidian-mention-text');
+			textEl.createSpan('droidian-mention-name').setText(c.name);
+			const dir = c.path.includes('/') ? c.path.slice(0, c.path.lastIndexOf('/')) : '';
+			if (dir) textEl.createSpan('droidian-mention-dir').setText(dir);
+
+			const idx = i;
+			item.addEventListener('mousedown', (e) => {
+				e.preventDefault();
+				this.mentionActiveIdx = idx;
+				this.selectMention();
+			});
+		}
+
+		// Position popup above the input wrap
+		this.wrapEl.style.position = 'relative';
+		this.wrapEl.appendChild(popup);
+		this.mentionPopup = popup;
+
+		// Position: above the wrap
+		const popupH = Math.min(this.mentionCandidates.length, 8) * 40 + 8;
+		popup.style.bottom = `${this.wrapEl.offsetHeight + 4}px`;
+	}
+
+	private moveMention(delta: number): void {
+		if (!this.mentionCandidates.length) return;
+		this.mentionActiveIdx = (this.mentionActiveIdx + delta + this.mentionCandidates.length) % this.mentionCandidates.length;
+		this.updateMentionHighlight();
+	}
+
+	private updateMentionHighlight(): void {
+		if (!this.mentionPopup) return;
+		const items = this.mentionPopup.querySelectorAll('.droidian-mention-item');
+		items.forEach((el, i) => el.toggleClass('is-active', i === this.mentionActiveIdx));
+		(items[this.mentionActiveIdx] as HTMLElement)?.scrollIntoView({ block: 'nearest' });
+	}
+
+	private selectMention(): void {
+		const c = this.mentionCandidates[this.mentionActiveIdx];
+		if (!c) { this.closeMention(); return; }
+
+		// Remove '@query' from textarea
+		const val = this.textareaEl.value;
+		const cursor = this.textareaEl.selectionStart ?? val.length;
+		const before = val.slice(0, this.mentionStart);
+		const after = val.slice(cursor);
+		// Insert a space after so typing continues naturally
+		this.textareaEl.value = before + after;
+		const newCursor = before.length;
+		this.textareaEl.setSelectionRange(newCursor, newCursor);
+
+		// Add attachment
+		if (c.kind === 'folder') {
+			this.addFolderAttachment(c.path, c.name);
+		} else {
+			const file = this.app.vault.getFileByPath(c.path);
+			if (file) this.addFileAttachment(file);
+		}
+
+		this.closeMention();
+		this.autoResize();
+		this.updateSendState();
+		this.textareaEl.focus();
+	}
+
+	private closeMention(): void {
+		this.closeMentionPopupEl();
+		this.mentionQuery = '';
+		this.mentionStart = -1;
+		this.mentionCandidates = [];
+	}
+
+	private closeMentionPopupEl(): void {
+		if (this.mentionPopup) {
+			this.mentionPopup.remove();
+			this.mentionPopup = null;
+		}
+	}
+
 	// ── Attachment handling ───────────────────────────────────────────────────
 
 	private async handlePaste(e: ClipboardEvent): Promise<void> {
 		const items = e.clipboardData?.items;
 		if (!items) return;
-
 		for (const item of Array.from(items)) {
 			if (item.type.startsWith('image/')) {
 				e.preventDefault();
@@ -143,27 +336,19 @@ export class InputArea {
 
 	private async handleDrop(e: DragEvent): Promise<void> {
 		const files = e.dataTransfer?.files;
-		if (!files) return;
-
-		for (const file of Array.from(files)) {
-			if (file.type.startsWith('image/')) {
-				await this.addImageFile(file);
-			} else {
-				// Try to find the vault file by name
-				const vaultFile = this.app.vault.getFiles().find(f =>
-					f.name === file.name || f.path === file.name
-				);
-				if (vaultFile) {
-					this.addFileAttachment(vaultFile);
+		if (files) {
+			for (const file of Array.from(files)) {
+				if (file.type.startsWith('image/')) {
+					await this.addImageFile(file);
+				} else {
+					const vaultFile = this.app.vault.getFiles().find(f => f.name === file.name || f.path === file.name);
+					if (vaultFile) this.addFileAttachment(vaultFile);
 				}
 			}
 		}
-
-		// Also handle Obsidian's internal drag data (file path in text)
 		const text = e.dataTransfer?.getData('text/plain') ?? '';
 		if (text) {
-			const vaultFile = this.app.vault.getFileByPath(text)
-				?? this.app.metadataCache.getFirstLinkpathDest(text, '');
+			const vaultFile = this.app.vault.getFileByPath(text) ?? this.app.metadataCache.getFirstLinkpathDest(text, '');
 			if (vaultFile) this.addFileAttachment(vaultFile);
 		}
 	}
@@ -172,14 +357,12 @@ export class InputArea {
 		const reader = new FileReader();
 		reader.onload = () => {
 			const dataUrl = reader.result as string;
-			// dataUrl = "data:image/png;base64,XXXX"
 			const comma = dataUrl.indexOf(',');
 			const base64 = dataUrl.slice(comma + 1);
-			const mimeType = file.type || 'image/png';
 			const attachment: Attachment = {
 				type: 'image',
 				name: file.name || 'image',
-				mimeType,
+				mimeType: file.type || 'image/png',
 				base64,
 			};
 			this.attachments.push(attachment);
@@ -190,13 +373,16 @@ export class InputArea {
 	}
 
 	private addFileAttachment(file: TFile): void {
-		// Prevent duplicates
 		if (this.attachments.some(a => a.vaultPath === file.path)) return;
-		const attachment: Attachment = {
-			type: 'file',
-			name: file.name,
-			vaultPath: file.path,
-		};
+		const attachment: Attachment = { type: 'file', name: file.name, vaultPath: file.path };
+		this.attachments.push(attachment);
+		this.renderAttachmentPreview(attachment);
+		this.updateSendState();
+	}
+
+	private addFolderAttachment(path: string, name: string): void {
+		if (this.attachments.some(a => a.vaultPath === path)) return;
+		const attachment: Attachment = { type: 'folder', name: name || path, vaultPath: path };
 		this.attachments.push(attachment);
 		this.renderAttachmentPreview(attachment);
 		this.updateSendState();
@@ -204,7 +390,6 @@ export class InputArea {
 
 	private renderAttachmentPreview(attachment: Attachment): void {
 		this.attachmentsEl.show();
-
 		const item = this.attachmentsEl.createDiv('droidian-attachment-item');
 
 		if (attachment.type === 'image' && attachment.base64) {
@@ -213,7 +398,8 @@ export class InputArea {
 			img.alt = attachment.name;
 		} else {
 			const label = item.createDiv('droidian-attachment-file');
-			label.createSpan('droidian-attachment-file-icon').innerHTML = fileIcon();
+			const icon = label.createSpan('droidian-attachment-file-icon');
+			icon.innerHTML = attachment.type === 'folder' ? folderIcon() : fileIcon();
 			label.createSpan('droidian-attachment-file-name').setText(attachment.name);
 		}
 
@@ -226,9 +412,7 @@ export class InputArea {
 			e.stopPropagation();
 			this.attachments = this.attachments.filter(a => a !== attachment);
 			item.remove();
-			if (this.attachmentsEl.childElementCount === 0) {
-				this.attachmentsEl.hide();
-			}
+			if (this.attachmentsEl.childElementCount === 0) this.attachmentsEl.hide();
 			this.updateSendState();
 		});
 	}
@@ -310,5 +494,11 @@ function fileIcon(): string {
 	return `<svg viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
 		<path d="M3 1h5.5L11 3.5V13H3V1z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
 		<path d="M8.5 1v3H11" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+	</svg>`;
+}
+
+function folderIcon(): string {
+	return `<svg viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+		<path d="M1 3.5C1 2.67 1.67 2 2.5 2H5l1.5 1.5H11.5C12.33 3.5 13 4.17 13 5v6c0 .83-.67 1.5-1.5 1.5h-9C1.67 12.5 1 11.83 1 11V3.5z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
 	</svg>`;
 }

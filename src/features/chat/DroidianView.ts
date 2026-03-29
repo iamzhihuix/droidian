@@ -145,20 +145,25 @@ export class DroidianView extends ItemView {
 			return;
 		}
 
-		// Build enriched text: prepend file attachment paths so Droid can read them
+		// Build enriched text: prepend file/folder attachment refs so Droid can read them
 		const fileAttachments = attachments.filter(a => a.type === 'file');
+		const folderAttachments = attachments.filter(a => a.type === 'folder');
 		const imageAttachments = attachments.filter(a => a.type === 'image');
 		let enrichedText = text;
-		if (fileAttachments.length > 0) {
-			const refs = fileAttachments.map(a => `[Attached file: ${a.vaultPath}]`).join('\n');
-			enrichedText = refs + (text ? '\n\n' + text : '');
+		const refs: string[] = [
+			...fileAttachments.map(a => `[Attached file: ${a.vaultPath}]`),
+			...folderAttachments.map(a => `[Attached folder: ${a.vaultPath}/]`),
+		];
+		if (refs.length > 0) {
+			enrichedText = refs.join('\n') + (text ? '\n\n' + text : '');
 		}
 
 		// Add user message
+		const nonImageNames = [...fileAttachments, ...folderAttachments].map(a => a.name).join(', ');
 		const userMsg: ChatMessage = {
 			id: `user-${Date.now()}`,
 			role: 'user',
-			content: text || fileAttachments.map(a => a.name).join(', '),
+			content: text || nonImageNames,
 			timestamp: Date.now(),
 			attachments: attachments.length > 0 ? attachments : undefined,
 		};

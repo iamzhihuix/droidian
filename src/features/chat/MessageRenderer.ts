@@ -99,6 +99,10 @@ export class MessageRenderer {
 				chip.createSpan().setText(att.name);
 				chip.addClass('droidian-file-link');
 				chip.addEventListener('click', () => openFileInNewTab(this.app, att.vaultPath!));
+			} else if (att.type === 'folder') {
+				const chip = grid.createDiv('droidian-msg-attachment-file');
+				chip.createSpan('droidian-msg-attachment-icon').innerHTML = msgFolderIcon();
+				chip.createSpan().setText(att.name);
 			}
 		}
 	}
@@ -174,5 +178,11 @@ function msgFileIcon(): string {
 	return `<svg viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
 		<path d="M3 1h5.5L11 3.5V13H3V1z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
 		<path d="M8.5 1v3H11" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+	</svg>`;
+}
+
+function msgFolderIcon(): string {
+	return `<svg viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+		<path d="M1 3.5C1 2.67 1.67 2 2.5 2H5l1.5 1.5H11.5C12.33 3.5 13 4.17 13 5v6c0 .83-.67 1.5-1.5 1.5h-9C1.67 12.5 1 11.83 1 11V3.5z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
 	</svg>`;
 }
