@@ -1,0 +1,10 @@
+{
+  "id": "droidian",
+  "name": "Factory Droid for Obsidian",
+  "version": "1.0.0",
+  "minAppVersion": "1.8.0",
+  "description": "在 Obsidian 右侧侧边栏中集成 Factory Droid AI 编程助手，支持流式对话、工具调用展示和多会话管理",
+  "author": "Factory AI",
+  "authorUrl": "https://factory.ai",
+  "isDesktopOnly": false
+}
