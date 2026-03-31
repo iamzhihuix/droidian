@@ -1,4 +1,4 @@
-import { Plugin, Platform, WorkspaceLeaf } from 'obsidian';
+import { Plugin, Platform, WorkspaceLeaf, addIcon } from 'obsidian';
 import { patchElectronCompat } from './utils/electronCompat';
 import type { DroidSettings, Session } from './core/types';
 import { VIEW_TYPE_DROIDIAN, DEFAULT_SETTINGS } from './core/constants';
@@ -25,9 +25,20 @@ export default class DroidianPlugin extends Plugin {
 	async onload(): Promise<void> {
 		await this.loadData_();
 
+		addIcon('droidian-icon',
+			`<g transform="translate(3,3) scale(0.875)">
+				<!-- Gear outer ring -->
+				<path fill="currentColor" d="
+					M43 4l-3.5 6.1A22 22 0 0 0 33 8.4L32 1.5h-8l-1 6.9a22 22 0 0 0-6.5 2.7L13 4 6.5 8.5l4.2 5.7A22 22 0 0 0 8 20.5L1 21.5v8l7 1a22 22 0 0 0 2.7 6.5L6.5 43 13 47.5l5.5-3.8a22 22 0 0 0 6.5 2.7l1 7h8l1-7a22 22 0 0 0 6.5-2.7l5.5 3.8L53 43l-3.7-6.1a22 22 0 0 0 2.7-6.5l7-1v-8l-7-1a22 22 0 0 0-2.7-6.5L53 8.5 46.5 4 43 4z
+					M28 18a8 8 0 1 1 0 16 8 8 0 0 1 0-16z"/>
+				<!-- Lightning bolt -->
+				<path fill="var(--background-primary,#fff)" d="M32 15 l-7 12 h6 l-3 10 l10-14 h-6 z"/>
+			</g>`
+		);
+
 		this.registerView(VIEW_TYPE_DROIDIAN, (leaf) => new DroidianView(leaf, this));
 
-		this.addRibbonIcon('bot', 'Open Factory Droid', () => {
+		this.addRibbonIcon('droidian-icon', 'Open Factory Droid', () => {
 			this.activateView();
 		});
 
