@@ -9,18 +9,15 @@ export interface StatusBarCallbacks {
 export class StatusBar {
 	private containerEl: HTMLElement;
 	private modelEl: HTMLElement;
-	private effortEl: HTMLElement;
-	private autoToggleEl: HTMLElement;
+	private autonomyEl: HTMLElement;
 	private settings: DroidSettings;
 	private callbacks: StatusBarCallbacks;
 	private progressEl: HTMLElement;
-	private isAutoRun = false;
 
 	constructor(containerEl: HTMLElement, settings: DroidSettings, callbacks: StatusBarCallbacks) {
 		this.containerEl = containerEl;
 		this.settings = settings;
 		this.callbacks = callbacks;
-		this.isAutoRun = settings.autoLevel !== 'readonly';
 		this.build();
 	}
 
@@ -32,24 +29,14 @@ export class StatusBar {
 		this.updateModelLabel();
 		this.modelEl.addEventListener('click', () => this.openModelMenu());
 
-		// Effort / auto level
-		this.effortEl = this.containerEl.createEl('button', { cls: 'droidian-statusbar-effort' });
-		this.updateEffortLabel();
-		this.effortEl.addEventListener('click', () => this.openAutoMenu());
+		// Autonomy level
+		this.autonomyEl = this.containerEl.createEl('button', { cls: 'droidian-statusbar-effort' });
+		this.updateAutonomyLabel();
+		this.autonomyEl.addEventListener('click', () => this.openAutonomyMenu());
 
 		// Progress placeholder
 		this.progressEl = this.containerEl.createSpan({ cls: 'droidian-statusbar-progress' });
 		this.progressEl.hide();
-
-		// Spacer
-		this.containerEl.createSpan({ cls: 'droidian-statusbar-spacer' });
-
-		// YOLO toggle
-		const toggleWrap = this.containerEl.createDiv('droidian-statusbar-toggle-wrap');
-		toggleWrap.createSpan().setText('YOLO');
-		this.autoToggleEl = toggleWrap.createDiv('droidian-toggle');
-		this.autoToggleEl.toggleClass('is-active', this.isAutoRun);
-		this.autoToggleEl.addEventListener('click', () => this.handleToggle());
 	}
 
 	private updateModelLabel(): void {
@@ -57,9 +44,9 @@ export class StatusBar {
 		this.modelEl.setText(m?.name ?? this.settings.model);
 	}
 
-	private updateEffortLabel(): void {
+	private updateAutonomyLabel(): void {
 		const label = AUTO_LEVEL_LABELS[this.settings.autoLevel] ?? this.settings.autoLevel;
-		this.effortEl.setText(`Effort: ${label}`);
+		this.autonomyEl.setText(`Autonomy: ${label}`);
 	}
 
 	private openModelMenu(): void {
@@ -83,7 +70,7 @@ export class StatusBar {
 		setTimeout(() => document.addEventListener('click', () => menu.remove(), { once: true }), 0);
 	}
 
-	private openAutoMenu(): void {
+	private openAutonomyMenu(): void {
 		const levels: DroidSettings['autoLevel'][] = ['readonly', 'low', 'medium', 'high'];
 		const menu = document.createElement('div');
 		menu.className = 'droidian-dropdown-menu';
@@ -94,26 +81,15 @@ export class StatusBar {
 			if (lvl === this.settings.autoLevel) item.addClass('is-selected');
 			item.addEventListener('click', () => {
 				this.settings.autoLevel = lvl;
-				this.isAutoRun = lvl !== 'readonly';
-				this.autoToggleEl.toggleClass('is-active', this.isAutoRun);
-				this.updateEffortLabel();
+				this.updateAutonomyLabel();
 				this.callbacks.onAutoLevelChange(lvl);
 				menu.remove();
 			});
 		}
 
-		this.positionMenu(menu, this.effortEl);
+		this.positionMenu(menu, this.autonomyEl);
 		document.body.appendChild(menu);
 		setTimeout(() => document.addEventListener('click', () => menu.remove(), { once: true }), 0);
-	}
-
-	private handleToggle(): void {
-		this.isAutoRun = !this.isAutoRun;
-		this.autoToggleEl.toggleClass('is-active', this.isAutoRun);
-		const newLevel: DroidSettings['autoLevel'] = this.isAutoRun ? 'low' : 'readonly';
-		this.settings.autoLevel = newLevel;
-		this.updateEffortLabel();
-		this.callbacks.onAutoLevelChange(newLevel);
 	}
 
 	showProgress(pct: number): void {
@@ -127,7 +103,6 @@ export class StatusBar {
 
 	updateSettings(settings: DroidSettings): void {
 		this.settings = settings;
-		this.isAutoRun = settings.autoLevel !== 'readonly';
 		this.build();
 	}
 

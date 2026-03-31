@@ -48,7 +48,7 @@ export const TOOL_DISPLAY_NAMES: Record<string, string> = {
 };
 
 export const AUTO_LEVEL_LABELS: Record<string, string> = {
-	readonly: 'Read-only',
+	readonly: 'Off',
 	low: 'Low',
 	medium: 'Medium',
 	high: 'High',
